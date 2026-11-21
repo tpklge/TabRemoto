@@ -1,0 +1,15 @@
+# Bare target probe. Never discover/link macOS libraries into the P4 build.
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR riscv32)
+set(CMAKE_C_COMPILER riscv32-esp-elf-gcc)
+set(CMAKE_CXX_COMPILER riscv32-esp-elf-g++)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+set(CMAKE_C_FLAGS_INIT "-march=rv32imafc_zicsr_zifencei -mabi=ilp32f -D__STDC_NO_THREADS__=1")
+set(CMAKE_CXX_FLAGS_INIT "-march=rv32imafc_zicsr_zifencei -mabi=ilp32f -D__STDC_NO_THREADS__=1")
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+
+set(CMAKE_FIND_ROOT_PATH "${CMAKE_CURRENT_LIST_DIR}/openssl-install")
+set(CMAKE_C_FLAGS_INIT "${CMAKE_C_FLAGS_INIT} @${CMAKE_CURRENT_LIST_DIR}/rdp-idf-flags.rsp")
+set(CMAKE_CXX_FLAGS_INIT "${CMAKE_CXX_FLAGS_INIT} @${CMAKE_CURRENT_LIST_DIR}/rdp-idf-flags.rsp")

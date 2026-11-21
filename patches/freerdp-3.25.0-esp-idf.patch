@@ -1,0 +1,1260 @@
+diff --git a/channels/cliprdr/client/cliprdr_format.c b/channels/cliprdr/client/cliprdr_format.c
+index 9d57e91..a076921 100644
+--- a/channels/cliprdr/client/cliprdr_format.c
++++ b/channels/cliprdr/client/cliprdr_format.c
+@@ -252,7 +252,7 @@ UINT cliprdr_process_format_data_response(cliprdrPlugin* cliprdr, wStream* s, UI
+ 	UINT error = CHANNEL_RC_OK;
+ 
+ 	WLog_Print(cliprdr->log, WLOG_DEBUG,
+-	           "ServerFormatDataResponse: msgFlags=0x%08" PRIx32 ", dataLen=%" PRIu32, msgFlags,
++	           "ServerFormatDataResponse: msgFlags=0x%08" PRIx32 ", dataLen=%" PRIu32, (UINT32)msgFlags,
+ 	           dataLen);
+ 
+ 	formatDataResponse.common.msgType = CB_FORMAT_DATA_RESPONSE;
+diff --git a/channels/cliprdr/cliprdr_common.c b/channels/cliprdr/cliprdr_common.c
+index 06b752a..37bdcf5 100644
+--- a/channels/cliprdr/cliprdr_common.c
++++ b/channels/cliprdr/cliprdr_common.c
+@@ -244,7 +244,7 @@ wStream* cliprdr_packet_format_list_new(const CLIPRDR_FORMAT_LIST* formatList,
+ 	WINPR_ASSERT(formatList);
+ 
+ 	if (formatList->common.msgType != CB_FORMAT_LIST)
+-		WLog_WARN(TAG, "called with invalid type %08" PRIx32, formatList->common.msgType);
++		WLog_WARN(TAG, "called with invalid type %08" PRIx32, (UINT32)formatList->common.msgType);
+ 
+ 	if (useLongFormatNames && useAsciiNames)
+ 		WLog_WARN(TAG, "called with invalid arguments useLongFormatNames=true && "
+diff --git a/libfreerdp/common/settings.c b/libfreerdp/common/settings.c
+index b09ecac..6f15c39 100644
+--- a/libfreerdp/common/settings.c
++++ b/libfreerdp/common/settings.c
+@@ -2063,6 +2063,13 @@ const void* freerdp_settings_get_pointer_array(const rdpSettings* settings,
+ 
+ UINT32 freerdp_settings_get_codecs_flags(const rdpSettings* settings)
+ {
++#ifdef ESP_PLATFORM
++    /* The embedded frontend negotiates basic bitmap updates, no GFX channel.
++     * Avoid allocating unrelated desktop-sized GFX decoder workspaces. */
++    if (!settings->SupportGraphicsPipeline && !settings->RemoteFxCodec && !settings->NSCodec)
++        return FREERDP_CODEC_INTERLEAVED | ((settings->ColorDepth == 32) ? FREERDP_CODEC_PLANAR : 0);
++#endif
++
+ 	UINT32 flags = FREERDP_CODEC_ALL;
+ 	if (settings->RemoteFxCodec == FALSE)
+ 	{
+diff --git a/libfreerdp/core/freerdp.c b/libfreerdp/core/freerdp.c
+index 3ebe4a8..656a9d1 100644
+--- a/libfreerdp/core/freerdp.c
++++ b/libfreerdp/core/freerdp.c
+@@ -1,3 +1,6 @@
++#ifdef ESP_PLATFORM
++#include "esp_log.h"
++#endif
+ /**
+  * FreeRDP: A Remote Desktop Protocol Implementation
+  * FreeRDP Core
+@@ -876,7 +879,12 @@ BOOL freerdp_context_new_ex(freerdp* instance, rdpSettings* settings)
+ 
+ 	context->log = WLog_Get(TAG);
+ 	if (!context->log)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	/* Set to external settings, prevents rdp_new from creating its own instance */
+ 	context->settings = settings;
+@@ -887,18 +895,33 @@ BOOL freerdp_context_new_ex(freerdp* instance, rdpSettings* settings)
+ 	context->metrics = metrics_new(context);
+ 
+ 	if (!context->metrics)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	rdp = rdp_new(context);
+ 
+ 	if (!rdp)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	context->rdp = rdp;
+ 	context->pubSub = rdp->pubSub;
+ 
+ 	if (!context->pubSub)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	PubSub_AddEventTypes(rdp->pubSub, FreeRDP_Events, ARRAYSIZE(FreeRDP_Events));
+ 
+@@ -913,7 +936,12 @@ BOOL freerdp_context_new_ex(freerdp* instance, rdpSettings* settings)
+ 	context->graphics = graphics_new(context);
+ 
+ 	if (!context->graphics)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	context->input = rdp->input;
+ 	context->update = rdp->update;
+@@ -923,35 +951,65 @@ BOOL freerdp_context_new_ex(freerdp* instance, rdpSettings* settings)
+ 	if (!(context->errorDescription = calloc(1, 500)))
+ 	{
+ 		WLog_Print(context->log, WLOG_ERROR, "calloc failed!");
+-		goto fail;
++		{
++#ifdef ESP_PLATFORM
++			ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
++			goto fail;
++		}
+ 	}
+ 
+ 	if (!(context->channelErrorEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr)))
+ 	{
+ 		WLog_Print(context->log, WLOG_ERROR, "CreateEvent failed!");
+-		goto fail;
++		{
++#ifdef ESP_PLATFORM
++			ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
++			goto fail;
++		}
+ 	}
+ 
+ 	update_register_client_callbacks(rdp->update);
+ 
+ 	if (!(context->channels = freerdp_channels_new(instance)))
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	context->dump = stream_dump_new();
+ 	if (!context->dump)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	/* Fallback:
+ 	 * Client common library might set a function pointer to handle this, but here we provide a
+ 	 * default implementation that simply calls instance->GetAccessToken.
+ 	 */
+ 	if (!freerdp_set_common_access_token(context, freerdp_common_context))
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	IFCALLRET(instance->ContextNew, ret, instance, context);
+ 
+ 	if (!ret)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	return TRUE;
+ 
+diff --git a/libfreerdp/core/rdp.c b/libfreerdp/core/rdp.c
+index d92dace..d7a24ba 100644
+--- a/libfreerdp/core/rdp.c
++++ b/libfreerdp/core/rdp.c
+@@ -1,3 +1,6 @@
++#ifdef ESP_PLATFORM
++#include "esp_log.h"
++#endif
+ /**
+  * FreeRDP: A Remote Desktop Protocol Implementation
+  * RDP Core
+@@ -2388,11 +2391,21 @@ rdpRdp* rdp_new(rdpContext* context)
+ 
+ 	rdp->log = WLog_Create(RDP_TAG, WLog_GetRoot());
+ 	if (!rdp->log)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	(void)_snprintf(rdp->log_context, sizeof(rdp->log_context), "%p", (void*)context);
+ 	if (!WLog_SetContext(rdp->log, nullptr, rdp->log_context))
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	InitializeCriticalSection(&rdp->critical);
+ 	rdp->context = context;
+@@ -2406,14 +2419,24 @@ rdpRdp* rdp_new(rdpContext* context)
+ 		context->settings = rdp->settings = freerdp_settings_new(flags);
+ 
+ 		if (!rdp->settings)
++		{
++#ifdef ESP_PLATFORM
++			ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 			goto fail;
++		}
+ 	}
+ 	else
+ 		rdp->settings = context->settings;
+ 
+ 	/* Keep a backup copy of settings for later comparisons */
+ 	if (!rdp_set_backup_settings(rdp))
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	rdp->settings->instance = context->instance;
+ 
+@@ -2430,65 +2453,130 @@ rdpRdp* rdp_new(rdpContext* context)
+ 	}
+ 
+ 	if (!rdp_new_common(rdp))
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	{
+ 		const rdpTransportIo* io = transport_get_io_callbacks(rdp->transport);
+ 		if (!io)
++		{
++#ifdef ESP_PLATFORM
++			ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 			goto fail;
++		}
+ 		rdp->io = calloc(1, sizeof(rdpTransportIo));
+ 		if (!rdp->io)
++		{
++#ifdef ESP_PLATFORM
++			ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 			goto fail;
++		}
+ 		*rdp->io = *io;
+ 	}
+ 
+ 	rdp->input = input_new(rdp);
+ 
+ 	if (!rdp->input)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	rdp->update = update_new(rdp);
+ 
+ 	if (!rdp->update)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	rdp->redirection = redirection_new();
+ 
+ 	if (!rdp->redirection)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	rdp->autodetect = autodetect_new(rdp->context);
+ 
+ 	if (!rdp->autodetect)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	rdp->heartbeat = heartbeat_new();
+ 
+ 	if (!rdp->heartbeat)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	rdp->multitransport = multitransport_new(rdp, INITIATE_REQUEST_PROTOCOL_UDPFECL |
+ 	                                                  INITIATE_REQUEST_PROTOCOL_UDPFECR);
+ 
+ 	if (!rdp->multitransport)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	rdp->bulk = bulk_new(context);
+ 
+ 	if (!rdp->bulk)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	rdp->pubSub = PubSub_New(TRUE);
+ 	if (!rdp->pubSub)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	rdp->abortEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+ 	if (!rdp->abortEvent)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	rdp->timer = freerdp_timer_new(rdp);
+ 	if (!rdp->timer)
++	{
++#ifdef ESP_PLATFORM
++		ESP_LOGE("rdp.port", "Construction failed at %s:%d", __func__, __LINE__);
++#endif
+ 		goto fail;
++	}
+ 
+ 	return rdp;
+ 
+@@ -2653,10 +2741,10 @@ const char* rdp_finalize_flags_to_str(UINT32 flags, char* buffer, size_t size)
+ 	char number[32] = WINPR_C_ARRAY_INIT;
+ 	const UINT32 mask =
+ 	    (uint32_t)~(FINALIZE_SC_SYNCHRONIZE_PDU | FINALIZE_SC_CONTROL_COOPERATE_PDU |
+-	                FINALIZE_SC_CONTROL_GRANTED_PDU | FINALIZE_SC_FONT_MAP_PDU |
+-	                FINALIZE_CS_SYNCHRONIZE_PDU | FINALIZE_CS_CONTROL_COOPERATE_PDU |
+-	                FINALIZE_CS_CONTROL_REQUEST_PDU | FINALIZE_CS_PERSISTENT_KEY_LIST_PDU |
+-	                FINALIZE_CS_FONT_LIST_PDU | FINALIZE_DEACTIVATE_REACTIVATE);
++		            FINALIZE_SC_CONTROL_GRANTED_PDU | FINALIZE_SC_FONT_MAP_PDU |
++		            FINALIZE_CS_SYNCHRONIZE_PDU | FINALIZE_CS_CONTROL_COOPERATE_PDU |
++		            FINALIZE_CS_CONTROL_REQUEST_PDU | FINALIZE_CS_PERSISTENT_KEY_LIST_PDU |
++		            FINALIZE_CS_FONT_LIST_PDU | FINALIZE_DEACTIVATE_REACTIVATE);
+ 
+ 	if (flags & FINALIZE_SC_SYNCHRONIZE_PDU)
+ 		winpr_str_append("FINALIZE_SC_SYNCHRONIZE_PDU", buffer, size, "|");
+@@ -2886,11 +2974,11 @@ static BOOL option_is_runtime_checks(WINPR_ATTR_UNUSED wLog* log, const char* to
+ static BOOL option_is_experimental(WINPR_ATTR_UNUSED wLog* log, const char* tok)
+ {
+ 	const char* experimental[] = { STR(WITH_DSP_EXPERIMENTAL), STR(WITH_VAAPI),
+-		                           STR(WITH_GFX_AV1),          STR(WITH_VAAPI_H264_ENCODING),
+-		                           STR(WITH_MEDIACODEC),       STR(WITH_CLIENT_SDL2),
+-		                           STR(WITH_OPENCL),           STR(WITH_LIBRESSL),
+-		                           STR(WITH_MBEDTLS),          STR(WITH_MEDIA_FOUNDATION),
+-		                           STR(WITH_KRB5_HEIMDAL) };
++	                               STR(WITH_GFX_AV1),          STR(WITH_VAAPI_H264_ENCODING),
++	                               STR(WITH_MEDIACODEC),       STR(WITH_CLIENT_SDL2),
++	                               STR(WITH_OPENCL),           STR(WITH_LIBRESSL),
++	                               STR(WITH_MBEDTLS),          STR(WITH_MEDIA_FOUNDATION),
++	                               STR(WITH_KRB5_HEIMDAL) };
+ 	for (size_t x = 0; x < ARRAYSIZE(experimental); x++)
+ 	{
+ 		const char* opt = experimental[x];
+@@ -2906,39 +2994,39 @@ static BOOL option_is_debug(wLog* log, const char* tok)
+ {
+ 	WINPR_ASSERT(log);
+ 	const char* debug[] = { STR(WITH_DEBUG_ALL),
+-		                    STR(WITH_DEBUG_CERTIFICATE),
+-		                    STR(WITH_DEBUG_CAPABILITIES),
+-		                    STR(WITH_DEBUG_CHANNELS),
+-		                    STR(WITH_DEBUG_CLIPRDR),
+-		                    STR(WITH_DEBUG_CODECS),
+-		                    STR(WITH_DEBUG_DVC),
+-		                    STR(WITH_DEBUG_TSMF),
+-		                    STR(WITH_DEBUG_KBD),
+-		                    STR(WITH_DEBUG_LICENSE),
+-		                    STR(WITH_DEBUG_NEGO),
+-		                    STR(WITH_DEBUG_NLA),
+-		                    STR(WITH_DEBUG_TSG),
+-		                    STR(WITH_DEBUG_RAIL),
+-		                    STR(WITH_DEBUG_RDP),
+-		                    STR(WITH_DEBUG_RDPEI),
+-		                    STR(WITH_DEBUG_REDIR),
+-		                    STR(WITH_DEBUG_RDPDR),
+-		                    STR(WITH_DEBUG_RFX),
+-		                    STR(WITH_DEBUG_SCARD),
+-		                    STR(WITH_DEBUG_SND),
+-		                    STR(WITH_DEBUG_SVC),
+-		                    STR(WITH_DEBUG_TRANSPORT),
+-		                    STR(WITH_DEBUG_TIMEZONE),
+-		                    STR(WITH_DEBUG_WND),
+-		                    STR(WITH_DEBUG_RINGBUFFER),
+-		                    STR(WITH_DEBUG_SYMBOLS),
+-		                    STR(WITH_DEBUG_EVENTS),
+-		                    STR(WITH_DEBUG_MUTEX),
+-		                    STR(WITH_DEBUG_NTLM),
+-		                    STR(WITH_DEBUG_SDL_KBD_EVENTS),
+-		                    STR(WITH_DEBUG_SDL_KBD_EVENTS),
+-		                    STR(WITH_DEBUG_THREADS),
+-		                    STR(WITH_DEBUG_URBDRC) };
++	                        STR(WITH_DEBUG_CERTIFICATE),
++	                        STR(WITH_DEBUG_CAPABILITIES),
++	                        STR(WITH_DEBUG_CHANNELS),
++	                        STR(WITH_DEBUG_CLIPRDR),
++	                        STR(WITH_DEBUG_CODECS),
++	                        STR(WITH_DEBUG_DVC),
++	                        STR(WITH_DEBUG_TSMF),
++	                        STR(WITH_DEBUG_KBD),
++	                        STR(WITH_DEBUG_LICENSE),
++	                        STR(WITH_DEBUG_NEGO),
++	                        STR(WITH_DEBUG_NLA),
++	                        STR(WITH_DEBUG_TSG),
++	                        STR(WITH_DEBUG_RAIL),
++	                        STR(WITH_DEBUG_RDP),
++	                        STR(WITH_DEBUG_RDPEI),
++	                        STR(WITH_DEBUG_REDIR),
++	                        STR(WITH_DEBUG_RDPDR),
++	                        STR(WITH_DEBUG_RFX),
++	                        STR(WITH_DEBUG_SCARD),
++	                        STR(WITH_DEBUG_SND),
++	                        STR(WITH_DEBUG_SVC),
++	                        STR(WITH_DEBUG_TRANSPORT),
++	                        STR(WITH_DEBUG_TIMEZONE),
++	                        STR(WITH_DEBUG_WND),
++	                        STR(WITH_DEBUG_RINGBUFFER),
++	                        STR(WITH_DEBUG_SYMBOLS),
++	                        STR(WITH_DEBUG_EVENTS),
++	                        STR(WITH_DEBUG_MUTEX),
++	                        STR(WITH_DEBUG_NTLM),
++	                        STR(WITH_DEBUG_SDL_KBD_EVENTS),
++	                        STR(WITH_DEBUG_SDL_KBD_EVENTS),
++	                        STR(WITH_DEBUG_THREADS),
++	                        STR(WITH_DEBUG_URBDRC) };
+ 
+ 	for (size_t x = 0; x < ARRAYSIZE(debug); x++)
+ 	{
+diff --git a/libfreerdp/crypto/x509_utils.c b/libfreerdp/crypto/x509_utils.c
+index 77f642b..ca72b27 100644
+--- a/libfreerdp/crypto/x509_utils.c
++++ b/libfreerdp/crypto/x509_utils.c
+@@ -62,14 +62,15 @@ BYTE* x509_utils_get_hash(const X509* xcert, const char* hash, size_t* length)
+ 		return nullptr;
+ 	}
+ 
+-	if (X509_digest(xcert, md, fp, &fp_len) != 1)
++	unsigned int digest_len=fp_len;
++	if (X509_digest(xcert, md, fp, &digest_len) != 1)
+ 	{
+ 		free(fp);
+ 		WLog_ERR(TAG, "certificate does not have a %s hash!", hash);
+ 		return nullptr;
+ 	}
+ 
+-	*length = fp_len;
++	*length = digest_len;
+ 	return fp;
+ }
+ 
+diff --git a/libfreerdp/utils/passphrase.c b/libfreerdp/utils/passphrase.c
+index f083c1a..4476eeb 100644
+--- a/libfreerdp/utils/passphrase.c
++++ b/libfreerdp/utils/passphrase.c
+@@ -317,7 +317,11 @@ BOOL set_termianl_nonblock(int ifd, BOOL nonblock)
+ 		}
+ 
+ 		struct termios now = termios;
+-		cfmakeraw(&now);
++#ifdef ESP_PLATFORM
++        errno=ENOTSUP;return FALSE; // Credentials are supplied by the application UI.
++#else
++        cfmakeraw(&now);
++#endif
+ 		const int rc3 = tcsetattr(fd, TCSANOW, &now);
+ 		if (rc3 != 0)
+ 		{
+diff --git a/libfreerdp/utils/signal_posix.c b/libfreerdp/utils/signal_posix.c
+index 98f4a4a..1dc559c 100644
+--- a/libfreerdp/utils/signal_posix.c
++++ b/libfreerdp/utils/signal_posix.c
+@@ -81,7 +81,13 @@ static const int fatal_signals[] = { SIGABRT,   SIGALRM, SIGBUS,  SIGFPE,  SIGHU
+ #ifdef SIGVTALRM
+ 	                                 SIGVTALRM,
+ #endif
+-	                                 SIGXCPU,   SIGXFSZ };
++	                                 #ifdef SIGXCPU
++ SIGXCPU,
++#endif
++#ifdef SIGXFSZ
++ SIGXFSZ,
++#endif
++};
+ 
+ static BOOL register_handlers(const int* signals, size_t count, void (*handler)(int))
+ {
+diff --git a/winpr/include/winpr/winsock.h b/winpr/include/winpr/winsock.h
+index be0e5f3..5dd6cf0 100644
+--- a/winpr/include/winpr/winsock.h
++++ b/winpr/include/winpr/winsock.h
+@@ -90,6 +90,11 @@ WINPR_API INT winpr_inet_pton(INT Family, PCSTR pszAddrString, PVOID pAddrBuf);
+ #include <netinet/tcp.h>
+ #include <net/if.h>
+ 
++#ifdef ESP_PLATFORM
++/* lwIP already provides a different closesocket signature. Keep WinPR namespaced. */
++#define closesocket winpr_closesocket
++#endif
++
+ #include <winpr/io.h>
+ #include <winpr/error.h>
+ 
+diff --git a/winpr/libwinpr/CMakeLists.txt b/winpr/libwinpr/CMakeLists.txt
+index 30e5e5c..f39e2a1 100644
+--- a/winpr/libwinpr/CMakeLists.txt
++++ b/winpr/libwinpr/CMakeLists.txt
+@@ -140,7 +140,7 @@ if(WITH_URIPARSER)
+   winpr_pc_add_requires_private("liburiparser")
+ endif()
+ 
+-if(NOT IOS)
++if(NOT IOS AND NOT ESP_PLATFORM)
+   check_function_exists(timer_create TIMER_CREATE)
+   check_function_exists(timer_delete TIMER_DELETE)
+   check_function_exists(timer_settime TIMER_SETTIME)
+diff --git a/winpr/libwinpr/comm/CMakeLists.txt b/winpr/libwinpr/comm/CMakeLists.txt
+index c959bd4..959406d 100644
+--- a/winpr/libwinpr/comm/CMakeLists.txt
++++ b/winpr/libwinpr/comm/CMakeLists.txt
+@@ -20,7 +20,7 @@ set(MODULE_PREFIX "WINPR_COMM")
+ 
+ if(NOT WIN32)
+   set(${MODULE_PREFIX}_SRCS comm.c comm.h)
+-  if(NOT EMSCRIPTEN AND NOT APPLE)
++  if(NOT EMSCRIPTEN AND NOT APPLE AND NOT ESP_PLATFORM)
+     winpr_definition_add(WINPR_HAVE_SERIAL_SUPPORT)
+     list(
+       APPEND
+diff --git a/winpr/libwinpr/crt/alignment.c b/winpr/libwinpr/crt/alignment.c
+index b261662..24e9943 100644
+--- a/winpr/libwinpr/crt/alignment.c
++++ b/winpr/libwinpr/crt/alignment.c
+@@ -209,7 +209,7 @@ void* winpr_aligned_offset_recalloc(void* memblock, size_t num, size_t size, siz
+ 
+ 	WINPR_ALIGNED_MEM* pMem = get_aligned_mem_block(memblock);
+ 	if (!pMem)
+-		goto fail;
++		return nullptr;
+ 
+ 	if ((num == 0) || (size == 0))
+ 		goto fail;
+@@ -220,7 +220,7 @@ void* winpr_aligned_offset_recalloc(void* memblock, size_t num, size_t size, siz
+ 	newMemblock = winpr_aligned_offset_malloc(size * num, alignment, offset);
+ 
+ 	if (!newMemblock)
+-		goto fail;
++		return nullptr;
+ 
+ 	pNewMem = WINPR_ALIGNED_MEM_STRUCT_FROM_PTR(newMemblock);
+ 	{
+diff --git a/winpr/libwinpr/crt/string.c b/winpr/libwinpr/crt/string.c
+index 91a611a..ddde4c4 100644
+--- a/winpr/libwinpr/crt/string.c
++++ b/winpr/libwinpr/crt/string.c
+@@ -770,7 +770,7 @@ char* StrSep(char** stringp, const char* delim)
+ 
+ INT64 GetLine(char** lineptr, size_t* size, FILE* stream)
+ {
+-#if defined(_WIN32)
++#if defined(_WIN32) || defined(ESP_PLATFORM)
+ 	char c;
+ 	char* n;
+ 	size_t step = 32;
+diff --git a/winpr/libwinpr/file/file.c b/winpr/libwinpr/file/file.c
+index 6d01c3a..6b61d39 100644
+--- a/winpr/libwinpr/file/file.c
++++ b/winpr/libwinpr/file/file.c
+@@ -588,7 +588,7 @@ static INT64 FileTimeToUS(const FILETIME* ft)
+ 	return tmp;
+ }
+ 
+-#if defined(_POSIX_C_SOURCE) && (_POSIX_C_SOURCE >= 200809L)
++#if defined(_POSIX_C_SOURCE) && (_POSIX_C_SOURCE >= 200809L) && !defined(ESP_PLATFORM)
+ static struct timespec filetimeToTimespec(const FILETIME* ftime)
+ {
+ 	WINPR_ASSERT(ftime);
+@@ -1100,7 +1100,7 @@ BOOL GetDiskFreeSpaceA(LPCSTR lpRootPathName, LPDWORD lpSectorsPerCluster, LPDWO
+ #endif
+ 
+ 	struct STATVFS svfst = WINPR_C_ARRAY_INIT;
+-	STATVFS(lpRootPathName, &svfst);
++	if(STATVFS(lpRootPathName, &svfst)!=0)return FALSE;
+ 	*lpSectorsPerCluster = (UINT32)MIN(svfst.f_frsize, UINT32_MAX);
+ 	*lpBytesPerSector = 1;
+ 	*lpNumberOfFreeClusters = (UINT32)MIN(svfst.f_bavail, UINT32_MAX);
+diff --git a/winpr/libwinpr/file/namedPipeClient.c b/winpr/libwinpr/file/namedPipeClient.c
+index b9b4c2f..9e91961 100644
+--- a/winpr/libwinpr/file/namedPipeClient.c
++++ b/winpr/libwinpr/file/namedPipeClient.c
+@@ -174,7 +174,7 @@ NamedPipeClientCreateFileA(LPCSTR lpFileName, WINPR_ATTR_UNUSED DWORD dwDesiredA
+ 	if (!pNamedPipe->lpFilePath)
+ 		goto fail;
+ 
+-	pNamedPipe->clientfd = socket(PF_LOCAL, SOCK_STREAM, 0);
++	pNamedPipe->clientfd = socket(AF_UNIX, SOCK_STREAM, 0);
+ 	if (pNamedPipe->clientfd < 0)
+ 		goto fail;
+ 
+diff --git a/winpr/libwinpr/path/shell.c b/winpr/libwinpr/path/shell.c
+index c444574..61b1d9a 100644
+--- a/winpr/libwinpr/path/shell.c
++++ b/winpr/libwinpr/path/shell.c
+@@ -350,6 +350,24 @@ char* GetPath_XDG_RUNTIME_DIR(void)
+ 
+ char* GetKnownPath(eKnownPathTypes id)
+ {
++#ifdef ESP_PLATFORM
++	// The embedded client owns one SD root; it has no desktop HOME/XDG env.
++	switch (id)
++	{
++		case KNOWN_PATH_HOME:
++		case KNOWN_PATH_XDG_DATA_HOME:
++			return _strdup("/sdcard/TabRemoto");
++		case KNOWN_PATH_XDG_CONFIG_HOME:
++		case KNOWN_PATH_SYSTEM_CONFIG_HOME:
++			return _strdup("/sdcard/TabRemoto/config");
++		case KNOWN_PATH_TEMP:
++		case KNOWN_PATH_XDG_CACHE_HOME:
++		case KNOWN_PATH_XDG_RUNTIME_DIR:
++			return _strdup("/sdcard/TabRemoto/cache");
++		default:
++			return NULL;
++	}
++#endif
+ 	char* path = nullptr;
+ 
+ 	switch (id)
+diff --git a/winpr/libwinpr/synch/event.c b/winpr/libwinpr/synch/event.c
+index a5f0422..dd52c1f 100644
+--- a/winpr/libwinpr/synch/event.c
++++ b/winpr/libwinpr/synch/event.c
+@@ -71,7 +71,13 @@ static void dump_event(WINPR_EVENT* event, size_t index)
+ #if !defined(WITH_EVENTFD_READ_WRITE)
+ static int eventfd_read(int fd, eventfd_t* value)
+ {
+-	return (read(fd, value, sizeof(*value)) == sizeof(*value)) ? 0 : -1;
++    const ssize_t used=read(fd,value,sizeof(*value));
++#ifdef ESP_PLATFORM
++    // SDK eventfd reads return an eight-byte zero even when empty. Linux
++    // EFD_NONBLOCK returns EAGAIN; WinPR's drain loop relies on that contract.
++    if(used==sizeof(*value)&&*value==0){errno=EAGAIN;return -1;}
++#endif
++    return used==sizeof(*value)?0:-1;
+ }
+ 
+ static int eventfd_write(int fd, eventfd_t value)
+diff --git a/winpr/libwinpr/synch/semaphore.c b/winpr/libwinpr/synch/semaphore.c
+index df486cc..b567826 100644
+--- a/winpr/libwinpr/synch/semaphore.c
++++ b/winpr/libwinpr/synch/semaphore.c
+@@ -22,6 +22,9 @@
+ #include <winpr/synch.h>
+ 
+ #include "synch.h"
++#ifdef ESP_PLATFORM
++#include <sys/eventfd.h>
++#endif
+ 
+ #ifdef WINPR_HAVE_UNISTD_H
+ #include <unistd.h>
+@@ -58,6 +61,13 @@ static DWORD SemaphoreCleanupHandle(HANDLE handle)
+ 	if (!SemaphoreIsHandled(handle))
+ 		return WAIT_FAILED;
+ 
++#ifdef ESP_PLATFORM
++ pthread_mutex_lock(&sem->esp_gate);uint64_t value;
++ if(sem->esp_count<=0){pthread_mutex_unlock(&sem->esp_gate);return WAIT_TIMEOUT;}
++ read(sem->pipe_fd[0],&value,sizeof(value));--sem->esp_count;
++ if(sem->esp_count){value=1;write(sem->pipe_fd[0],&value,sizeof(value));}
++ pthread_mutex_unlock(&sem->esp_gate);return WAIT_OBJECT_0;
++#else
+ 	uint8_t val = 0;
+ 	const SSIZE_T length = read(sem->pipe_fd[0], &val, sizeof(val));
+ 
+@@ -70,6 +80,7 @@ static DWORD SemaphoreCleanupHandle(HANDLE handle)
+ 	}
+ 
+ 	return WAIT_OBJECT_0;
++#endif
+ }
+ 
+ BOOL SemaphoreCloseHandle(HANDLE handle)
+@@ -79,7 +90,9 @@ BOOL SemaphoreCloseHandle(HANDLE handle)
+ 	if (!SemaphoreIsHandled(handle))
+ 		return FALSE;
+ 
+-#ifdef WINPR_PIPE_SEMAPHORE
++#ifdef ESP_PLATFORM
++ close(semaphore->pipe_fd[0]);pthread_mutex_destroy(&semaphore->esp_gate);
++#elif defined(WINPR_PIPE_SEMAPHORE)
+ 
+ 	if (semaphore->pipe_fd[0] != -1)
+ 	{
+@@ -141,7 +154,13 @@ HANDLE CreateSemaphoreW(WINPR_ATTR_UNUSED LPSECURITY_ATTRIBUTES lpSemaphoreAttri
+ 	semaphore->pipe_fd[1] = -1;
+ 	semaphore->sem = (winpr_sem_t*)nullptr;
+ 	semaphore->common.ops = &ops;
+-#ifdef WINPR_PIPE_SEMAPHORE
++#ifdef ESP_PLATFORM
++ if(lInitialCount<0||lMaximumCount<=0||lInitialCount>lMaximumCount){free(semaphore);return NULL;}
++ pthread_mutex_init(&semaphore->esp_gate,NULL);semaphore->esp_count=lInitialCount;semaphore->esp_max=lMaximumCount;
++ semaphore->pipe_fd[0]=eventfd(0,0);
++ if(semaphore->pipe_fd[0]<0){pthread_mutex_destroy(&semaphore->esp_gate);free(semaphore);return NULL;}
++ if(lInitialCount){uint64_t value=1;if(write(semaphore->pipe_fd[0],&value,sizeof(value))!=sizeof(value)){close(semaphore->pipe_fd[0]);pthread_mutex_destroy(&semaphore->esp_gate);free(semaphore);return NULL;}}
++#elif defined(WINPR_PIPE_SEMAPHORE)
+ 
+ 	if (pipe(semaphore->pipe_fd) < 0)
+ 	{
+@@ -226,7 +245,13 @@ BOOL ReleaseSemaphore(HANDLE hSemaphore, LONG lReleaseCount,
+ 	if (Type == HANDLE_TYPE_SEMAPHORE)
+ 	{
+ 		semaphore = (WINPR_SEMAPHORE*)Object;
+-#ifdef WINPR_PIPE_SEMAPHORE
++#ifdef ESP_PLATFORM
++ pthread_mutex_lock(&semaphore->esp_gate);
++ if(lReleaseCount<=0||lReleaseCount>semaphore->esp_max-semaphore->esp_count){pthread_mutex_unlock(&semaphore->esp_gate);return FALSE;}
++ if(lpPreviousCount)*lpPreviousCount=semaphore->esp_count;
++ if(semaphore->esp_count==0){uint64_t value=1;if(write(semaphore->pipe_fd[0],&value,sizeof(value))!=sizeof(value)){pthread_mutex_unlock(&semaphore->esp_gate);return FALSE;}}
++ semaphore->esp_count+=lReleaseCount;pthread_mutex_unlock(&semaphore->esp_gate);
++#elif defined(WINPR_PIPE_SEMAPHORE)
+ 
+ 		if (semaphore->pipe_fd[0] != -1)
+ 		{
+diff --git a/winpr/libwinpr/synch/synch.h b/winpr/libwinpr/synch/synch.h
+index 5a9f08c..67606d7 100644
+--- a/winpr/libwinpr/synch/synch.h
++++ b/winpr/libwinpr/synch/synch.h
+@@ -62,10 +62,16 @@ struct winpr_semaphore
+ 
+ 	int pipe_fd[2];
+ 	winpr_sem_t* sem;
++#ifdef ESP_PLATFORM
++ pthread_mutex_t esp_gate;LONG esp_count,esp_max;
++#endif
+ };
+ typedef struct winpr_semaphore WINPR_SEMAPHORE;
+ 
+-#ifdef WINPR_HAVE_SYS_TIMERFD_H
++#if defined(ESP_PLATFORM)
++#include "esp_timer.h"
++#define TIMER_IMPL_ESP
++#elif defined(WINPR_HAVE_SYS_TIMERFD_H)
+ #include <stdio.h>
+ #include <unistd.h>
+ #include <fcntl.h>
+@@ -98,6 +104,14 @@ struct winpr_timer
+ 	struct itimerspec timeout;
+ #endif
+ 
++#ifdef TIMER_IMPL_ESP
++	WINPR_EVENT_IMPL event;
++	esp_timer_handle_t esp_tid;
++	struct itimerspec timeout;
++	bool esp_closing;
++	uint64_t esp_period;
++#endif
++
+ #ifdef TIMER_IMPL_POSIX
+ 	WINPR_EVENT_IMPL event;
+ 	timer_t tid;
+diff --git a/winpr/libwinpr/synch/timer.c b/winpr/libwinpr/synch/timer.c
+index e5f68fb..b668253 100644
+--- a/winpr/libwinpr/synch/timer.c
++++ b/winpr/libwinpr/synch/timer.c
+@@ -45,6 +45,33 @@
+ #include "../log.h"
+ #define TAG WINPR_TAG("synch.timer")
+ 
++#ifdef TIMER_IMPL_ESP
++#include "freertos/FreeRTOS.h"
++#include "freertos/semphr.h"
++static pthread_mutex_t esp_timer_gate=PTHREAD_MUTEX_INITIALIZER;
++static void EspTimerCallback(void* arg){
++ WINPR_TIMER* timer=arg;pthread_mutex_lock(&esp_timer_gate);
++ if(!timer->esp_closing && timer->esp_period != UINT64_MAX){
++  if(timer->esp_period){uint64_t period=timer->esp_period;timer->esp_period=0;esp_timer_start_periodic(timer->esp_tid,period);}
++  winpr_event_set(&timer->event);
++ }
++ pthread_mutex_unlock(&esp_timer_gate);
++}
++static void EspTimerBarrier(void* arg){xSemaphoreGive((SemaphoreHandle_t)arg);}
++static BOOL EspTimerClose(WINPR_TIMER* timer){
++ if(!timer->esp_tid)return TRUE;
++ pthread_mutex_lock(&esp_timer_gate);timer->esp_closing=true;esp_timer_stop(timer->esp_tid);pthread_mutex_unlock(&esp_timer_gate);
++ // Timer callbacks execute on one SDK task. A barrier drains a callback that
++ // was already running before freeing its WINPR_TIMER argument.
++ SemaphoreHandle_t done=xSemaphoreCreateBinary();if(!done)return FALSE;
++ esp_timer_handle_t barrier=NULL;esp_timer_create_args_t args={.callback=EspTimerBarrier,.arg=done,.name="winpr-drain"};
++ if(esp_timer_create(&args,&barrier)!=ESP_OK){vSemaphoreDelete(done);return FALSE;}
++ if(esp_timer_start_once(barrier,100)!=ESP_OK){esp_timer_delete(barrier);vSemaphoreDelete(done);return FALSE;}
++ xSemaphoreTake(done,portMAX_DELAY);esp_timer_delete(barrier);vSemaphoreDelete(done);
++ return esp_timer_delete(timer->esp_tid)==ESP_OK;
++}
++#endif
++
+ static BOOL TimerCloseHandle(HANDLE handle);
+ 
+ static BOOL TimerIsHandled(HANDLE handle)
+@@ -105,7 +132,7 @@ static DWORD TimerCleanupHandle(HANDLE handle)
+ 
+ 		return WAIT_FAILED;
+ 	}
+-#elif defined(TIMER_IMPL_POSIX) || defined(TIMER_IMPL_DISPATCH)
++#elif defined(TIMER_IMPL_POSIX) || defined(TIMER_IMPL_DISPATCH) || defined(TIMER_IMPL_ESP)
+ 	if (!winpr_event_reset(&timer->event))
+ 	{
+ 		WLog_ERR(TAG, "timer reset() failure");
+@@ -144,6 +171,10 @@ BOOL TimerCloseHandle(HANDLE handle)
+ 		close(timer->fd);
+ #endif
+ 
++#ifdef TIMER_IMPL_ESP
++ if(!EspTimerClose(timer))return FALSE;
++#endif
++
+ #ifdef TIMER_IMPL_POSIX
+ 	timer_delete(timer->tid);
+ #endif
+@@ -153,7 +184,7 @@ BOOL TimerCloseHandle(HANDLE handle)
+ 	dispatch_release(timer->source);
+ #endif
+ 
+-#if defined(TIMER_IMPL_POSIX) || defined(TIMER_IMPL_DISPATCH)
++#if defined(TIMER_IMPL_POSIX) || defined(TIMER_IMPL_DISPATCH) || defined(TIMER_IMPL_ESP)
+ 	winpr_event_uninit(&timer->event);
+ #endif
+ 
+@@ -254,7 +285,10 @@ static int InitializeWaitableTimer(WINPR_TIMER* timer)
+ {
+ 	int result = 0;
+ 
+-#ifdef TIMER_IMPL_TIMERFD
++#ifdef TIMER_IMPL_ESP
++ esp_timer_create_args_t args={.callback=EspTimerCallback,.arg=timer,.name="winpr-timer"};
++ if(esp_timer_create(&args,&timer->esp_tid)!=ESP_OK)return -1;
++#elif defined(TIMER_IMPL_TIMERFD)
+ 	timer->fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+ 	if (timer->fd <= 0)
+ 		return -1;
+@@ -331,7 +365,7 @@ HANDLE CreateWaitableTimerA(LPSECURITY_ATTRIBUTES lpTimerAttributes, BOOL bManua
+ 			timer->name = strdup(lpTimerName);
+ 
+ 		timer->common.ops = &ops;
+-#if defined(TIMER_IMPL_DISPATCH) || defined(TIMER_IMPL_POSIX)
++#if defined(TIMER_IMPL_DISPATCH) || defined(TIMER_IMPL_POSIX) || defined(TIMER_IMPL_ESP)
+ 		if (!winpr_event_init(&timer->event))
+ 			goto fail;
+ 		timer->fd = timer->event.fds[0];
+@@ -355,7 +389,7 @@ HANDLE CreateWaitableTimerA(LPSECURITY_ATTRIBUTES lpTimerAttributes, BOOL bManua
+ 
+ 	return handle;
+ 
+-#if defined(TIMER_IMPL_DISPATCH) || defined(TIMER_IMPL_POSIX)
++#if defined(TIMER_IMPL_DISPATCH) || defined(TIMER_IMPL_POSIX) || defined(TIMER_IMPL_ESP)
+ fail:
+ 	TimerCloseHandle(handle);
+ 	return nullptr;
+@@ -435,7 +469,7 @@ static void timerAPC(LPVOID arg)
+ #ifdef TIMER_IMPL_TIMERFD
+ 	while (timer_drain_fd(timer->fd))
+ 		;
+-#elif defined(TIMER_IMPL_POSIX) || defined(TIMER_IMPL_DISPATCH)
++#elif defined(TIMER_IMPL_POSIX) || defined(TIMER_IMPL_DISPATCH) || defined(TIMER_IMPL_ESP)
+ 	winpr_event_reset(&timer->event);
+ #endif
+ }
+@@ -480,7 +514,7 @@ BOOL SetWaitableTimer(HANDLE hTimer, const LARGE_INTEGER* lpDueTime, LONG lPerio
+ 			return FALSE;
+ 	}
+ 
+-#if defined(TIMER_IMPL_TIMERFD) || defined(TIMER_IMPL_POSIX)
++#if defined(TIMER_IMPL_TIMERFD) || defined(TIMER_IMPL_POSIX) || defined(TIMER_IMPL_ESP)
+ 	ZeroMemory(&(timer->timeout), sizeof(struct itimerspec));
+ 
+ 	if (lpDueTime->QuadPart < 0)
+@@ -505,6 +539,9 @@ BOOL SetWaitableTimer(HANDLE hTimer, const LARGE_INTEGER* lpDueTime, LONG lPerio
+ 		timer->timeout.it_interval.tv_sec = (lPeriod / 1000LL);                /* seconds */
+ 		timer->timeout.it_interval.tv_nsec = (1000000LL * (lPeriod % 1000LL)); /* nanoseconds */
+ 	}
++#ifdef TIMER_IMPL_ESP
++ else {timer->timeout.it_interval.tv_sec=0;timer->timeout.it_interval.tv_nsec=0;}
++#endif
+ 
+ 	if (lpDueTime->QuadPart != 0)
+ 	{
+@@ -517,7 +554,13 @@ BOOL SetWaitableTimer(HANDLE hTimer, const LARGE_INTEGER* lpDueTime, LONG lPerio
+ 		timer->timeout.it_value.tv_nsec = timer->timeout.it_interval.tv_nsec; /* nanoseconds */
+ 	}
+ 
+-#ifdef TIMER_IMPL_TIMERFD
++#ifdef TIMER_IMPL_ESP
++ pthread_mutex_lock(&esp_timer_gate);esp_timer_stop(timer->esp_tid);
++ uint64_t due=(uint64_t)timer->timeout.it_value.tv_sec*1000000+timer->timeout.it_value.tv_nsec/1000;
++ timer->esp_period=(uint64_t)timer->timeout.it_interval.tv_sec*1000000+timer->timeout.it_interval.tv_nsec/1000;
++ status=timer->esp_closing?-1:esp_timer_start_once(timer->esp_tid,due?due:1);
++ pthread_mutex_unlock(&esp_timer_gate);if(status!=ESP_OK)return FALSE;
++#elif defined(TIMER_IMPL_TIMERFD)
+ 	status = timerfd_settime(timer->fd, 0, &(timer->timeout), nullptr);
+ 	if (status)
+ 	{
+@@ -642,6 +685,12 @@ BOOL CancelWaitableTimer(HANDLE hTimer)
+ 	if (Type != HANDLE_TYPE_TIMER)
+ 		return FALSE;
+ 
++#ifdef TIMER_IMPL_ESP
++ WINPR_TIMER* timer=(WINPR_TIMER*)Object;pthread_mutex_lock(&esp_timer_gate);
++ timer->esp_period=UINT64_MAX;esp_err_t err=esp_timer_stop(timer->esp_tid);
++ winpr_event_reset(&timer->event);pthread_mutex_unlock(&esp_timer_gate);
++ return err==ESP_OK||err==ESP_ERR_INVALID_STATE;
++#endif
+ #if defined(__APPLE__)
+ 	{
+ 		WINPR_TIMER* timer = (WINPR_TIMER*)Object;
+@@ -888,9 +937,11 @@ static int StartTimerQueueThread(WINPR_TIMER_QUEUE* timerQueue)
+ 	pthread_mutex_init(&(timerQueue->cond_mutex), nullptr);
+ 	pthread_mutex_init(&(timerQueue->mutex), nullptr);
+ 	pthread_attr_init(&(timerQueue->attr));
++#ifndef ESP_PLATFORM
+ 	timerQueue->param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+ 	pthread_attr_setschedparam(&(timerQueue->attr), &(timerQueue->param));
+ 	pthread_attr_setschedpolicy(&(timerQueue->attr), SCHED_FIFO);
++#endif
+ 	pthread_create(&(timerQueue->thread), &(timerQueue->attr), TimerQueueThread, timerQueue);
+ 	return 0;
+ }
+diff --git a/winpr/libwinpr/thread/thread.c b/winpr/libwinpr/thread/thread.c
+index a0c5e7d..f2cb264 100644
+--- a/winpr/libwinpr/thread/thread.c
++++ b/winpr/libwinpr/thread/thread.c
+@@ -654,7 +654,7 @@ BOOL SetThreadPriority(HANDLE hThread, int nPriority)
+ 			sched_priority = normal;
+ 			break;
+ 	}
+-#if defined(_POSIX_C_SOURCE) && (_POSIX_C_SOURCE >= 200809L) && defined(PTHREAD_SETSCHEDPRIO)
++#if defined(_POSIX_C_SOURCE) && (_POSIX_C_SOURCE >= 200809L) && defined(PTHREAD_SETSCHEDPRIO) && !defined(ESP_PLATFORM)
+ 	WINPR_THREAD* thread = (WINPR_THREAD*)Object;
+ 	const int rc = pthread_setschedprio(thread->thread, sched_priority);
+ 	if (rc != 0)
+diff --git a/winpr/libwinpr/timezone/TimeZoneIanaAbbrevMap.c b/winpr/libwinpr/timezone/TimeZoneIanaAbbrevMap.c
+index ce041de..54c2f78 100644
+--- a/winpr/libwinpr/timezone/TimeZoneIanaAbbrevMap.c
++++ b/winpr/libwinpr/timezone/TimeZoneIanaAbbrevMap.c
+@@ -81,7 +81,11 @@ static void append_timezone(const char* dir, const char* name)
+ 	const time_t t = time(nullptr);
+ 	struct tm lt = WINPR_C_ARRAY_INIT;
+ 	(void)localtime_r(&t, &lt);
+-	append(tz, lt.tm_zone);
++	#ifdef ESP_PLATFORM
++ append(tz, tzname[lt.tm_isdst>0?1:0]);
++#else
++ append(tz, lt.tm_zone);
++#endif
+ 	restoreSavedTZ(oldtz);
+ 	free(tz);
+ }
+diff --git a/winpr/libwinpr/timezone/timezone.c b/winpr/libwinpr/timezone/timezone.c
+index 5e48e39..dfe8939 100644
+--- a/winpr/libwinpr/timezone/timezone.c
++++ b/winpr/libwinpr/timezone/timezone.c
+@@ -20,6 +20,11 @@
+  */
+ 
+ #include <winpr/config.h>
++#ifdef ESP_PLATFORM
++#define WINPR_TM_ZONE(t) (tzname[(t)->tm_isdst>0?1:0])
++#else
++#define WINPR_TM_ZONE(t) ((t)->tm_zone)
++#endif
+ 
+ #include <winpr/environment.h>
+ #include <winpr/wtypes.h>
+@@ -378,7 +383,12 @@ static struct tm systemtime2tm(const SYSTEMTIME* st)
+ static LONG get_gmtoff_min(const struct tm* t)
+ {
+ 	WINPR_ASSERT(t);
+-	return -(LONG)(t->tm_gmtoff / 60l);
++	#ifdef ESP_PLATFORM
++ struct tm local=*t,utc;time_t value=mktime(&local);if(!gmtime_r(&value,&utc))return 0;
++ utc.tm_isdst=local.tm_isdst;return (LONG)(difftime(mktime(&utc),value)/60);
++#else
++ return -(LONG)(t->tm_gmtoff / 60l);
++#endif
+ }
+ 
+ static struct tm update_tm(const struct tm* start)
+@@ -806,11 +816,11 @@ DWORD GetDynamicTimeZoneInformation(PDYNAMIC_TIME_ZONE_INFORMATION pTimeZoneInfo
+ 	tzid = winpr_guess_time_zone();
+ 	if (!map_iana_id(tzid, pTimeZoneInformation))
+ 	{
+-		const size_t len = TimeZoneIanaAbbrevGet(local_time->tm_zone, nullptr, 0);
++		const size_t len = TimeZoneIanaAbbrevGet(WINPR_TM_ZONE(local_time), nullptr, 0);
+ 		list = (const char**)calloc(len, sizeof(const char*));
+ 		if (!list)
+ 			goto out_error;
+-		const size_t size = TimeZoneIanaAbbrevGet(local_time->tm_zone, list, len);
++		const size_t size = TimeZoneIanaAbbrevGet(WINPR_TM_ZONE(local_time), list, len);
+ 		for (size_t x = 0; x < size; x++)
+ 		{
+ 			const char* id = list[x];
+diff --git a/winpr/libwinpr/utils/atexit.c b/winpr/libwinpr/utils/atexit.c
+index 23322a9..e2a372e 100644
+--- a/winpr/libwinpr/utils/atexit.c
++++ b/winpr/libwinpr/utils/atexit.c
+@@ -19,6 +19,9 @@
+  */
+ 
+ #include <stdlib.h>
++#ifdef ESP_PLATFORM
++#include "esp_log.h"
++#endif
+ #include <errno.h>
+ 
+ #include <winpr/debug.h>
+@@ -35,9 +38,16 @@ BOOL winpr_atexit(void (*fkt)(void))
+ 	const int rc = atexit(fkt);
+ 	if (rc != 0)
+ 	{
++#ifdef ESP_PLATFORM
++		/* The SDK has a bounded atexit table and uses hardware reset, not exit.
++		 * Never re-enter WLog while its root's InitOnce registers cleanup. */
++		ESP_LOGW("winpr.atexit", "SDK rejected cleanup registration %u (errno %d)",
++		         (unsigned)atexit_count, errno);
++#else
+ 		char buffer[128] = WINPR_C_ARRAY_INIT;
+ 		WLog_ERR(TAG, "atexit[%" PRIuz "] failed: %s [%d]", atexit_count,
+ 		         winpr_strerror(errno, buffer, sizeof(buffer)), errno);
++#endif
+ 		return FALSE;
+ 	}
+ 	return TRUE;
+diff --git a/winpr/libwinpr/winsock/winsock.c b/winpr/libwinpr/winsock/winsock.c
+index f05c079..4371d2e 100644
+--- a/winpr/libwinpr/winsock/winsock.c
++++ b/winpr/libwinpr/winsock/winsock.c
+@@ -18,6 +18,10 @@
+  */
+ 
+ #include <winpr/config.h>
++#ifdef ESP_PLATFORM
++#include "lwip/tcpip.h"
++#include "lwip/netif.h"
++#endif
+ 
+ #include <winpr/assert.h>
+ #include <winpr/crt.h>
+@@ -382,7 +386,11 @@ void WSASetLastError(int iError)
+ 			break;
+ 
+ 		case WSAESOCKTNOSUPPORT:
+-			errno = ESOCKTNOSUPPORT;
++			#ifdef ESOCKTNOSUPPORT
++ errno = ESOCKTNOSUPPORT;
++#else
++ errno = ENOTSUP;
++#endif
+ 			break;
+ 
+ 		case WSAEOPNOTSUPP:
+@@ -480,7 +488,11 @@ void WSASetLastError(int iError)
+ #endif
+ 
+ 		case WSAEUSERS:
+-			errno = EUSERS;
++			#ifdef EUSERS
++ errno = EUSERS;
++#else
++ errno = ENOTSUP;
++#endif
+ 			break;
+ 
+ 		case WSAEDQUOT:
+@@ -492,7 +504,11 @@ void WSASetLastError(int iError)
+ 			break;
+ 
+ 		case WSAEREMOTE:
+-			errno = EREMOTE;
++			#ifdef EREMOTE
++ errno = EREMOTE;
++#else
++ errno = ENOTSUP;
++#endif
+ 			break;
+ 		default:
+ 			break;
+@@ -568,9 +584,11 @@ int WSAGetLastError(void)
+ 			iError = WSAEPROTONOSUPPORT;
+ 			break;
+ 
++#ifdef ESOCKTNOSUPPORT
+ 		case ESOCKTNOSUPPORT:
+ 			iError = WSAESOCKTNOSUPPORT;
+ 			break;
++#endif
+ 
+ 		case EOPNOTSUPP:
+ 			iError = WSAEOPNOTSUPP;
+@@ -666,9 +684,11 @@ int WSAGetLastError(void)
+ 			break;
+ #endif
+ 
++#ifdef EUSERS
+ 		case EUSERS:
+ 			iError = WSAEUSERS;
+ 			break;
++#endif
+ 
+ 		case EDQUOT:
+ 			iError = WSAEDQUOT;
+@@ -678,9 +698,11 @@ int WSAGetLastError(void)
+ 			iError = WSAESTALE;
+ 			break;
+ 
++#ifdef EREMOTE
+ 		case EREMOTE:
+ 			iError = WSAEREMOTE;
+ 			break;
++#endif
+ 			/* Special cases */
+ #if (EAGAIN != EWOULDBLOCK)
+ 
+@@ -796,6 +818,21 @@ int WSAIoctl(SOCKET s, DWORD dwIoControlCode, WINPR_ATTR_UNUSED LPVOID lpvInBuff
+              LPDWORD lpcbBytesReturned, WINPR_ATTR_UNUSED LPWSAOVERLAPPED lpOverlapped,
+              WINPR_ATTR_UNUSED LPWSAOVERLAPPED_COMPLETION_ROUTINE lpCompletionRoutine)
+ {
++#ifdef ESP_PLATFORM
++ if(dwIoControlCode!=SIO_GET_INTERFACE_LIST||!lpvOutBuffer||!lpcbBytesReturned){WSASetLastError(WSAEOPNOTSUPP);return SOCKET_ERROR;}
++ unsigned count=0,capacity=cbOutBuffer/sizeof(INTERFACE_INFO);INTERFACE_INFO* list=lpvOutBuffer;
++ LOCK_TCPIP_CORE();
++ for(struct netif* n=netif_list;n&&count<capacity;n=n->next){
++  if(ip4_addr_isany_val(*netif_ip4_addr(n)))continue;
++  INTERFACE_INFO* item=&list[count++];memset(item,0,sizeof(*item));
++  item->iiFlags=(netif_is_up(n)&&netif_is_link_up(n)?_IFF_UP:0)|(n->flags&NETIF_FLAG_BROADCAST?_IFF_BROADCAST:0);
++  struct sockaddr_in address={.sin_len=sizeof(address),.sin_family=AF_INET};
++  address.sin_addr.s_addr=ip4_addr_get_u32(netif_ip4_addr(n));memcpy(&item->iiAddress,&address,sizeof(address));
++  address.sin_addr.s_addr=ip4_addr_get_u32(netif_ip4_netmask(n));memcpy(&item->iiNetmask,&address,sizeof(address));
++  address.sin_addr.s_addr=ip4_addr_get_u32(netif_ip4_addr(n))|~ip4_addr_get_u32(netif_ip4_netmask(n));memcpy(&item->iiBroadcastAddress,&address,sizeof(address));
++ }
++ UNLOCK_TCPIP_CORE();*lpcbBytesReturned=count*sizeof(INTERFACE_INFO);return 0;
++#else
+ 	int fd = 0;
+ 	int index = 0;
+ 	ULONG nFlags = 0;
+@@ -1003,6 +1040,7 @@ int WSAIoctl(SOCKET s, DWORD dwIoControlCode, WINPR_ATTR_UNUSED LPVOID lpvInBuff
+ 
+ 	*lpcbBytesReturned = (DWORD)(numInterfaces * sizeof(INTERFACE_INFO));
+ 	return 0;
++#endif
+ }
+ 
+ SOCKET _accept(SOCKET s, struct sockaddr* addr, int* addrlen)
+@@ -1251,7 +1289,11 @@ struct hostent* _gethostbyaddr(const char* addr, int len, int type)
+ {
+ 	struct hostent* host = nullptr;
+ 	// NOLINTNEXTLINE(concurrency-mt-unsafe)
+-	host = gethostbyaddr((const void*)addr, (socklen_t)len, type);
++	#ifdef ESP_PLATFORM
++ (void)addr;(void)len;(void)type;errno=ENOTSUP;host=NULL;
++#else
++ host = gethostbyaddr((const void*)addr, (socklen_t)len, type);
++#endif
+ 	return host;
+ }
+ 
+@@ -1272,7 +1314,11 @@ int _gethostname(char* name, int namelen)
+ struct servent* /* codespell:ignore servent */ _getservbyport(int port, const char* proto)
+ {
+ 	// NOLINTNEXTLINE(concurrency-mt-unsafe)
+-	return getservbyport(port, proto);
++	#ifdef ESP_PLATFORM
++ errno=ENOTSUP;return NULL;
++#else
++ return getservbyport(port, proto);
++#endif
+ }
+ 
+ struct servent*                                     /* codespell:ignore servent */
+@@ -1280,19 +1326,31 @@ _getservbyname(const char* name, const char* proto) // codespell:ignore servent
+ 
+ {
+ 	// NOLINTNEXTLINE(concurrency-mt-unsafe)
+-	return getservbyname(name, proto);
++	#ifdef ESP_PLATFORM
++ errno=ENOTSUP;return NULL;
++#else
++ return getservbyname(name, proto);
++#endif
+ }
+ 
+ struct protoent* _getprotobynumber(int number)
+ {
+ 	// NOLINTNEXTLINE(concurrency-mt-unsafe)
+-	return getprotobynumber(number);
++	#ifdef ESP_PLATFORM
++ errno=ENOTSUP;return NULL;
++#else
++ return getprotobynumber(number);
++#endif
+ }
+ 
+ struct protoent* _getprotobyname(const char* name)
+ {
+ 	// NOLINTNEXTLINE(concurrency-mt-unsafe)
+-	return getprotobyname(name);
++	#ifdef ESP_PLATFORM
++ errno=ENOTSUP;return NULL;
++#else
++ return getprotobyname(name);
++#endif
+ }
+ 
+ #endif /* _WIN32 */

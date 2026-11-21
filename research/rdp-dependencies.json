@@ -1,0 +1,14 @@
+{
+  "openssl": {
+    "version": "3.5.9",
+    "commit": "45e844fa2a14ec92d146bd8f5778ac130b6625fb",
+    "url": "https://github.com/openssl/openssl.git",
+    "patch": "patches/openssl-3.5.9-esp-idf.patch"
+  },
+  "freerdp": {
+    "version": "3.25.0",
+    "commit": "90e7f064dc3ab8672b8ec714059d8cd51be0743f",
+    "url": "https://github.com/FreeRDP/FreeRDP.git",
+    "patch": "patches/freerdp-3.25.0-esp-idf.patch"
+  }
+}

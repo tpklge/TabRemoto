@@ -1,0 +1,8 @@
+menu "TabRemoto"
+config TABREMOTO_DIAGNOSTICS
+    bool "Development test UI and injection hooks"
+    default n
+    help
+        Keep disabled for the version used on the device. Development builds
+        enable automated input, fixtures and cryptographic self tests separately.
+endmenu

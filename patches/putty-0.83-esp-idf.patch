@@ -1,0 +1,41 @@
+--- a/sshpubk.c
++++ b/sshpubk.c
+@@ -551,23 +551,9 @@
+ ssh2_userkey ssh2_wrong_passphrase = { NULL, NULL };
+ 
+ const ssh_keyalg *const all_keyalgs[] = {
+-    &ssh_rsa,
+-    &ssh_rsa_sha256,
+-    &ssh_rsa_sha512,
+-    &ssh_dsa,
+-    &ssh_ecdsa_nistp256,
+-    &ssh_ecdsa_nistp384,
+-    &ssh_ecdsa_nistp521,
++    &ssh_rsa, &ssh_rsa_sha256, &ssh_rsa_sha512,
++    &ssh_ecdsa_nistp256, &ssh_ecdsa_nistp384, &ssh_ecdsa_nistp521,
+     &ssh_ecdsa_ed25519,
+-    &ssh_ecdsa_ed448,
+-    &opensshcert_ssh_dsa,
+-    &opensshcert_ssh_rsa,
+-    &opensshcert_ssh_rsa_sha256,
+-    &opensshcert_ssh_rsa_sha512,
+-    &opensshcert_ssh_ecdsa_ed25519,
+-    &opensshcert_ssh_ecdsa_nistp256,
+-    &opensshcert_ssh_ecdsa_nistp384,
+-    &opensshcert_ssh_ecdsa_nistp521,
+ };
+ const size_t n_keyalgs = lenof(all_keyalgs);
+ 
+--- a/crypto/argon2.c
++++ b/crypto/argon2.c
+@@ -297,6 +297,10 @@
+                  * right, starting at 'jstart' (usually 0, but 2 in the first
+                  * slice). */
+                 for (size_t jpre = jstart; jpre < SL; jpre++) {
++#ifdef ESP_PLATFORM
++                    extern void tabremoto_putty_yield(void);
++                    if ((jpre & 63) == 0) tabremoto_putty_yield();
++#endif
+ 
+                     /* j is the x-coordinate of each block we process, made up
+                      * of the slice number and the index 'jpre' within the

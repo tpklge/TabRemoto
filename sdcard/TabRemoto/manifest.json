@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "app": "TabRemoto",
+  "resource_version": "0.1.0",
+  "firmware": "0.1.0",
+  "files": {
+    "assets/themes/dark.json": "45531d6b490b20fd47d57118bd0aa4e8fa1589b7c0d2c105f5049c391bb6e141",
+    "locales/pt-BR.json": "e9d11c3b058a834a90c5ce1ee9675ebd447b98d95f9f7144e76990a63cf56386",
+    "config/app.json": "afe8198cc5c80f24ae5761774b30a52a1859a370fb803eb8d754a77156e93459",
+    "assets/fonts/latin20.bin": "5f96f6a81985189132ea91aa2d6a58b70c6d1878912bebabc0bbed7a17803cad",
+    "assets/fonts/OFL.txt": "41f82bb4d24b304f30f7136bc47abdd083782e4265c984160f5649d1e78ea49c",
+    "assets/fonts/terminal20.bin": "9eec54cbe76176e67eeceb2d25a9317c4889e00a9fe89e54d6e7b5142f7e9925",
+    "assets/fonts/TERMINAL-OFL.txt": "3cc44d3bcbe3a70ad623889f5e1f3ea4d76e47429cb8fb0135e263f039aede6e"
+  }
+}

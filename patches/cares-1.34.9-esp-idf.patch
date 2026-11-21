@@ -1,0 +1,79 @@
+--- a/src/lib/ares_getaddrinfo.c
++++ b/src/lib/ares_getaddrinfo.c
+@@ -180,6 +180,10 @@
+  */
+ static unsigned short lookup_service(const char *service, int flags)
+ {
++#ifdef ESP_PLATFORM
++  (void)service; (void)flags; return 0; /* Named services are not provided by lwIP. */
++#else
++
+   const char     *proto;
+   struct servent *sep;
+ #ifdef HAVE_GETSERVBYNAME_R
+@@ -227,6 +231,7 @@
+     return (sep ? ntohs((unsigned short)sep->s_port) : 0);
+   }
+   return 0;
++#endif
+ }
+ 
+ /* If the name looks like an IP address or an error occurred,
+--- a/src/lib/ares_getnameinfo.c
++++ b/src/lib/ares_getnameinfo.c
+@@ -281,6 +281,12 @@
+ static char *lookup_service(unsigned short port, unsigned int flags, char *buf,
+                             size_t buflen)
+ {
++#ifdef ESP_PLATFORM
++  (void)flags; if (!port) return NULL;
++  int n=snprintf(buf,buflen,"%u",(unsigned)ntohs(port));
++  return n>=0&&(size_t)n<buflen?buf:NULL;
++#else
++
+   const char     *proto;
+   struct servent *sep;
+ #ifdef HAVE_GETSERVBYPORT_R
+@@ -351,6 +357,7 @@
+   }
+   buf[0] = '\0';
+   return NULL;
++#endif
+ }
+ 
+ #ifdef HAVE_STRUCT_SOCKADDR_IN6_SIN6_SCOPE_ID
+--- a/src/lib/ares_set_socket_functions.c
++++ b/src/lib/ares_set_socket_functions.c
+@@ -216,7 +216,7 @@
+     goto fail; /* LCOV_EXCL_LINE */
+   }
+ 
+-#if defined(FD_CLOEXEC) && !defined(MSDOS)
++#if defined(FD_CLOEXEC) && !defined(MSDOS) && !defined(ESP_PLATFORM) && !defined(ESP_PLATFORM)
+   /* Configure the socket fd as close-on-exec. */
+   if (fcntl(s, F_SETFD, FD_CLOEXEC) != 0) {
+     goto fail; /* LCOV_EXCL_LINE */
+--- a/src/lib/util/ares_rand.c
++++ b/src/lib/util/ares_rand.c
+@@ -202,7 +202,7 @@
+   state->bad_backends |= ARES_RAND_OS | ARES_RAND_FILE;
+ #endif
+ 
+-#if defined(HAVE_ARC4RANDOM_BUF) || defined(HAVE_GETRANDOM) || defined(_WIN32)
++#if defined(ESP_PLATFORM) || defined(HAVE_ARC4RANDOM_BUF) || defined(HAVE_GETRANDOM) || defined(_WIN32)
+   if (!(state->bad_backends & ARES_RAND_OS)) {
+     state->type = ARES_RAND_OS;
+     return ARES_TRUE;
+@@ -295,7 +295,11 @@
+ 
+     switch (state->type) {
+       case ARES_RAND_OS:
+-#ifdef _WIN32
++#if defined(ESP_PLATFORM)
++        extern void tabremoto_dns_random_bytes(unsigned char *, size_t);
++        tabremoto_dns_random_bytes(buf, len);
++        return;
++#elif defined(_WIN32)
+         RtlGenRandom(buf, (ULONG)len);
+         return;
+ #elif defined(HAVE_ARC4RANDOM_BUF)

@@ -1,0 +1,22 @@
+{
+  "libssh2": {
+    "commit": "dd1546700d0ed8ff7138bc1ccc288286fb3ab2b4",
+    "url": "https://github.com/libssh2/libssh2.git",
+    "patch": "patches/libssh2-p4.patch"
+  },
+  "esp_wireguard": {
+    "commit": "9217c5be0836e908005301ad2c2d42009e560c0e",
+    "url": "https://github.com/trombik/esp_wireguard.git",
+    "patch": "patches/wireguard-0.9.0-physical-netif.patch"
+  },
+  "libvterm": {
+    "url": "https://github.com/neovim/libvterm.git",
+    "commit": "934bc2fbf21800ac3458a499df8820ca5fb45fd3",
+    "patch": "patches/libvterm.patch"
+  },
+  "RobotoMono": {
+    "url": "https://github.com/googlefonts/RobotoMono.git",
+    "commit": "7bf0b33178844cc7d0c9915b746ece1be7f46bea",
+    "patch": "patches/robotomono.patch"
+  }
+}

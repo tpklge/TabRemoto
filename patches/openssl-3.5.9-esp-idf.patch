@@ -1,0 +1,233 @@
+diff --git a/crypto/bio/bss_mem.c b/crypto/bio/bss_mem.c
+index 4b21025..3380bc2 100644
+--- a/crypto/bio/bss_mem.c
++++ b/crypto/bio/bss_mem.c
+@@ -19,7 +19,7 @@ static int mem_gets(BIO *h, char *str, int size);
+ static long mem_ctrl(BIO *h, int cmd, long arg1, void *arg2);
+ static int mem_new(BIO *h);
+ static int secmem_new(BIO *h);
+-static int mem_free(BIO *data);
++static int bio_mem_free(BIO *data);
+ static int mem_buf_free(BIO *data);
+ static int mem_buf_sync(BIO *h);
+ 
+@@ -34,7 +34,7 @@ static const BIO_METHOD mem_method = {
+     mem_gets,
+     mem_ctrl,
+     mem_new,
+-    mem_free,
++    bio_mem_free,
+     NULL, /* mem_callback_ctrl */
+ };
+ 
+@@ -49,7 +49,7 @@ static const BIO_METHOD secmem_method = {
+     mem_gets,
+     mem_ctrl,
+     secmem_new,
+-    mem_free,
++    bio_mem_free,
+     NULL, /* mem_callback_ctrl */
+ };
+ 
+@@ -106,7 +106,7 @@ BIO *BIO_new_mem_buf(const void *buf, int len)
+     return ret;
+ }
+ 
+-static int mem_init(BIO *bi, unsigned long flags)
++static int bio_mem_init(BIO *bi, unsigned long flags)
+ {
+     BIO_BUF_MEM *bb = OPENSSL_zalloc(sizeof(*bb));
+ 
+@@ -131,15 +131,15 @@ static int mem_init(BIO *bi, unsigned long flags)
+ 
+ static int mem_new(BIO *bi)
+ {
+-    return mem_init(bi, 0L);
++    return bio_mem_init(bi, 0L);
+ }
+ 
+ static int secmem_new(BIO *bi)
+ {
+-    return mem_init(bi, BUF_MEM_FLAG_SECURE);
++    return bio_mem_init(bi, BUF_MEM_FLAG_SECURE);
+ }
+ 
+-static int mem_free(BIO *a)
++static int bio_mem_free(BIO *a)
+ {
+     BIO_BUF_MEM *bb;
+ 
+diff --git a/crypto/uid.c b/crypto/uid.c
+index c0c6290..9f6b7d3 100644
+--- a/crypto/uid.c
++++ b/crypto/uid.c
+@@ -10,7 +10,10 @@
+ #include <openssl/crypto.h>
+ #include <openssl/opensslconf.h>
+ 
+-#if defined(OPENSSL_SYS_WIN32) || defined(OPENSSL_SYS_VXWORKS) || defined(OPENSSL_SYS_UEFI) || defined(__wasi__)
++#if defined(ESP_PLATFORM)
++/* ESP-IDF/FreeRTOS has no set-user/group-ID process transitions. */
++int OPENSSL_issetugid(void) { return 0; }
++#elif defined(OPENSSL_SYS_WIN32) || defined(OPENSSL_SYS_VXWORKS) || defined(OPENSSL_SYS_UEFI) || defined(__wasi__)
+ 
+ int OPENSSL_issetugid(void)
+ {
+diff --git a/include/internal/sockets.h b/include/internal/sockets.h
+index 877bbd7..1013758 100644
+--- a/include/internal/sockets.h
++++ b/include/internal/sockets.h
+@@ -35,6 +35,9 @@
+ #include <sys/un.h>
+ #include <tcp.h>
+ #include <netdb.h>
++#if defined(ESP_PLATFORM) && !defined(NI_NUMERICHOST)
++#define NI_NUMERICHOST 1
++#endif
+ #include <arpa/inet.h>
+ #include <netinet/tcp.h>
+ #elif defined(_WIN32_WCE) && _WIN32_WCE < 410
+@@ -90,6 +93,9 @@ struct servent *PASCAL getservbyname(const char *, const char *);
+ #endif
+ 
+ #include <netdb.h>
++#if defined(ESP_PLATFORM) && !defined(NI_NUMERICHOST)
++#define NI_NUMERICHOST 1
++#endif
+ #if defined(OPENSSL_SYS_VMS)
+ typedef size_t socklen_t; /* Currently appears to be missing on VMS */
+ #endif
+@@ -118,7 +124,7 @@ typedef size_t socklen_t; /* Currently appears to be missing on VMS */
+ #endif
+ 
+ #ifdef OPENSSL_SYS_UNIX
+-#ifndef OPENSSL_SYS_TANDEM
++#if !defined(OPENSSL_SYS_TANDEM) && !defined(ESP_PLATFORM)
+ #include <poll.h>
+ #endif
+ #include <errno.h>
+diff --git a/providers/implementations/kdfs/scrypt.c b/providers/implementations/kdfs/scrypt.c
+index 37a2c6f..0e7ec7c 100644
+--- a/providers/implementations/kdfs/scrypt.c
++++ b/providers/implementations/kdfs/scrypt.c
+@@ -383,30 +383,44 @@ static void scryptBlockMix(uint32_t *B_, uint32_t *B, uint64_t r)
+     OPENSSL_cleanse(X, sizeof(X));
+ }
+ 
++/* ESP32: preserve the upstream ROMix operations and full N*r memory cost,
++ * but store V rows in bounded allocations instead of one 16 MiB block.
++ * No disk spill, parameter change, checkpointing or recomputation. */
++#if defined(ESP_PLATFORM) || defined(TABREMOTO_SCRYPT_PAGED)
++# define SCRYPT_PAGED 1
++typedef struct { uint32_t **pages; uint64_t rows_per_page; } SCRYPT_V;
++static uint32_t *scryptVrow(SCRYPT_V *v, uint64_t row, uint64_t r)
++{ return v->pages[row / v->rows_per_page] + (row % v->rows_per_page) * 32 * r; }
++#else
++typedef uint32_t SCRYPT_V;
++static uint32_t *scryptVrow(SCRYPT_V *v, uint64_t row, uint64_t r)
++{ return v + row * 32 * r; }
++#endif
++
+ static void scryptROMix(unsigned char *B, uint64_t r, uint64_t N,
+-    uint32_t *X, uint32_t *T, uint32_t *V)
++    uint32_t *X, uint32_t *T, SCRYPT_V *V)
+ {
+     unsigned char *pB;
+     uint32_t *pV;
+     uint64_t i, k;
+ 
+     /* Convert from little endian input */
+-    for (pV = V, i = 0, pB = B; i < 32 * r; i++, pV++) {
++    for (pV = scryptVrow(V, 0, r), i = 0, pB = B; i < 32 * r; i++, pV++) {
+         *pV = *pB++;
+         *pV |= *pB++ << 8;
+         *pV |= *pB++ << 16;
+         *pV |= (uint32_t)*pB++ << 24;
+     }
+ 
+-    for (i = 1; i < N; i++, pV += 32 * r)
+-        scryptBlockMix(pV, pV - 32 * r, r);
++    for (i = 1; i < N; i++)
++        scryptBlockMix(scryptVrow(V, i, r), scryptVrow(V, i - 1, r), r);
+ 
+-    scryptBlockMix(X, V + (N - 1) * 32 * r, r);
++    scryptBlockMix(X, scryptVrow(V, N - 1, r), r);
+ 
+     for (i = 0; i < N; i++) {
+         uint32_t j;
+         j = X[16 * (2 * r - 1)] % N;
+-        pV = V + 32 * r * j;
++        pV = scryptVrow(V, j, r);
+         for (k = 0; k < 32 * r; k++)
+             T[k] = X[k] ^ *pV++;
+         scryptBlockMix(X, T, r);
+@@ -449,7 +463,13 @@ static int scrypt_alg(const char *pass, size_t passlen,
+ {
+     int rv = 0;
+     unsigned char *B;
+-    uint32_t *X, *V, *T;
++    uint32_t *X, *T;
++    SCRYPT_V *V;
++#ifdef SCRYPT_PAGED
++    SCRYPT_V segmented = {0};
++    size_t page_count = 0, allocated_pages = 0;
++    uint64_t row_bytes = 0;
++#endif
+     uint64_t i, Blen, Vlen;
+ 
+     /* Sanity check parameters */
+@@ -521,12 +541,36 @@ static int scrypt_alg(const char *pass, size_t passlen,
+     if (key == NULL)
+         return 1;
+ 
++#ifdef SCRYPT_PAGED
++    row_bytes = 128 * r;
++    segmented.rows_per_page = row_bytes <= SIZE_MAX / 64 ? 64 : 1;
++    page_count = (size_t)((N + segmented.rows_per_page - 1) / segmented.rows_per_page);
++    if (page_count > SIZE_MAX / sizeof(uint32_t *) ||
++        page_count * sizeof(uint32_t *) > maxmem - Blen - Vlen)
++        return 0;
++    B = OPENSSL_malloc((size_t)(Blen + 2 * row_bytes));
++#else
+     B = OPENSSL_malloc((size_t)(Blen + Vlen));
++#endif
+     if (B == NULL)
+         return 0;
+     X = (uint32_t *)(B + Blen);
+     T = X + 32 * r;
++#ifdef SCRYPT_PAGED
++    V = &segmented;
++    V->pages = OPENSSL_zalloc(page_count * sizeof(uint32_t *));
++    if (V->pages == NULL)
++        goto err;
++    for (allocated_pages = 0; allocated_pages < page_count; allocated_pages++) {
++        uint64_t left = N - allocated_pages * V->rows_per_page;
++        uint64_t rows = left < V->rows_per_page ? left : V->rows_per_page;
++        V->pages[allocated_pages] = OPENSSL_malloc((size_t)(rows * row_bytes));
++        if (V->pages[allocated_pages] == NULL)
++            goto err;
++    }
++#else
+     V = T + 32 * r;
++#endif
+     if (ossl_pkcs5_pbkdf2_hmac_ex(pass, passlen, salt, saltlen, 1, sha256,
+             (int)Blen, B, libctx, propq)
+         == 0)
+@@ -544,7 +588,17 @@ err:
+     if (rv == 0)
+         ERR_raise(ERR_LIB_EVP, EVP_R_PBKDF2_ERROR);
+ 
++#ifdef SCRYPT_PAGED
++    for (size_t page = 0; page < allocated_pages; page++) {
++        uint64_t left = N - page * segmented.rows_per_page;
++        uint64_t rows = left < segmented.rows_per_page ? left : segmented.rows_per_page;
++        OPENSSL_clear_free(segmented.pages[page], (size_t)(rows * row_bytes));
++    }
++    OPENSSL_free(segmented.pages);
++    OPENSSL_clear_free(B, (size_t)(Blen + 2 * row_bytes));
++#else
+     OPENSSL_clear_free(B, (size_t)(Blen + Vlen));
++#endif
+     return rv;
+ }
+ 

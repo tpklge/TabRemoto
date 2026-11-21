@@ -1,0 +1,26 @@
+diff --git a/src/parser.c b/src/parser.c
+index b43a549..d53de84 100644
+--- a/src/parser.c
++++ b/src/parser.c
+@@ -111,7 +111,7 @@ static void string_fragment(VTerm *vt, const char *str, size_t len, bool final)
+ size_t vterm_input_write(VTerm *vt, const char *bytes, size_t len)
+ {
+   size_t pos = 0;
+-  const char *string_start;
++  const char *string_start = NULL;
+ 
+   switch(vt->parser.state) {
+   case NORMAL:
+diff --git a/src/state.c b/src/state.c
+index 54618d5..4917263 100644
+--- a/src/state.c
++++ b/src/state.c
+@@ -1899,7 +1899,7 @@ static void request_status_string(VTermState *state, VTermStringFragment frag)
+ 
+     case ' '|('q'<<8): {
+       // Query DECSCUSR
+-      int reply;
++      int reply = 2;
+       switch(state->mode.cursor_shape) {
+         case VTERM_PROP_CURSORSHAPE_BLOCK:     reply = 2; break;
+         case VTERM_PROP_CURSORSHAPE_UNDERLINE: reply = 4; break;

@@ -1,0 +1,15 @@
+if(TABREMOTO_OPENSSL_BOOTSTRAP)
+    # Configure only: emit the actual SDK compile flags before building OpenSSL.
+    idf_component_register(SRCS "netdb_compat.c" INCLUDE_DIRS "include" REQUIRES tabremoto_crypto_gate lwip esp_timer bootloader_support esp_system)
+    return()
+endif()
+set(OPENSSL_SOURCE "${CMAKE_CURRENT_LIST_DIR}/../../research/openssl")
+set(OPENSSL_BUILD "${CMAKE_CURRENT_LIST_DIR}/../../research/openssl-build")
+if(NOT EXISTS "${OPENSSL_BUILD}/libssl.a" OR NOT EXISTS "${OPENSSL_BUILD}/libcrypto.a")
+    message(FATAL_ERROR "Build the pinned P4 OpenSSL with tools/build_openssl.py first")
+endif()
+idf_component_register(SRCS "probe.c" "netdb_compat.c" INCLUDE_DIRS "include" "${OPENSSL_BUILD}/include" "${OPENSSL_SOURCE}/include"
+    REQUIRES tabremoto_crypto_gate lwip esp_timer bootloader_support esp_system)
+add_prebuilt_library(tabremoto_openssl_ssl "${OPENSSL_BUILD}/libssl.a")
+add_prebuilt_library(tabremoto_openssl_crypto "${OPENSSL_BUILD}/libcrypto.a")
+target_link_libraries(${COMPONENT_LIB} PUBLIC tabremoto_openssl_ssl tabremoto_openssl_crypto)

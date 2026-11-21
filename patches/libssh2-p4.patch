@@ -1,0 +1,22 @@
+diff --git a/src/openssl.c b/src/openssl.c
+index be5d598..adc61e5 100644
+--- a/src/openssl.c
++++ b/src/openssl.c
+@@ -1116,7 +1116,7 @@ static int ossl_rsa_evp_to_pubkey(LIBSSH2_SESSION *session, char **method,
+ #endif
+     unsigned char *key;
+     char *method_buf = NULL;
+-    size_t key_len;
++    size_t key_len = 0;
+ 
+     ssh2_deb((session, LIBSSH2_TRACE_AUTH,
+               "Computing public key from RSA private key envelope"));
+@@ -1435,7 +1435,7 @@ static int ossl_dsa_evp_to_pubkey(LIBSSH2_SESSION *session, char **method,
+ #endif
+     unsigned char *key;
+     char *method_buf = NULL;
+-    size_t key_len;
++    size_t key_len = 0;
+ 
+     ssh2_deb((session, LIBSSH2_TRACE_AUTH,
+               "Computing public key from DSA private key envelope"));

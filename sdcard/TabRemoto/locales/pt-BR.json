@@ -1,0 +1,1 @@
+{"schema": 1, "app": "TabRemoto", "diagnostics": "Base do aparelho", "hint": "Aspas + vogal: á | Aspas + c/C: ç/Ç | Aa + aspas, soltar, vogal: ü | Espaço: literal", "retry": "Tentar SD novamente", "unavailable": "Indisponível nesta etapa", "sd_missing": "Cartão ausente"}

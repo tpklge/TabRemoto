@@ -1,0 +1,6 @@
+idf_component_register(SRCS "network.cpp" INCLUDE_DIRS "include" REQUIRES tabremoto_profiles tabremoto_dns tabremoto_import tabremoto_storage tabremoto_usb_net tabremoto_crypto_gate bootloader_support json esp_wifi esp_hosted esp_wifi_remote esp_netif esp_event lwip m5stack_tab5 iot_usbh_ecm iot_eth usb esp_wireguard mbedtls)
+target_compile_features(${COMPONENT_LIB} PUBLIC cxx_std_17)
+target_include_directories(${COMPONENT_LIB} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/../../research/esp_wireguard/src")
+idf_component_get_property(LWIP_COMPONENT lwip COMPONENT_LIB)
+target_compile_definitions(${LWIP_COMPONENT} PRIVATE ESP_IDF_LWIP_HOOK_FILENAME="tabremoto_route_hook.h")
+target_include_directories(${LWIP_COMPONENT} PRIVATE "${CMAKE_CURRENT_LIST_DIR}/include")
